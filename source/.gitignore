@@ -1,0 +1,26 @@
+# MERN Stack CI/CD Demo - Ignore Rules
+
+# Dependencies
+node_modules/
+
+# Environment files (chứa secrets - KHÔNG được commit)
+.env
+.env.staging
+.env.production
+!.env.example
+
+# Build output
+build/
+dist/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
