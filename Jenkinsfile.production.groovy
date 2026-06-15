@@ -52,12 +52,20 @@ def pushImage(String imageName, String tag) {
 }
 
 def deployStack(String composeFile, String stackName, String imageTag) {
-    echo "🚀 Deploying stack: ${stackName}"
-    sh """
-        export HARBOR_HOST=${HARBOR_HOST}
-        export IMAGE_TAG=${imageTag}
-        docker stack deploy -c ${composeFile} ${stackName}
-    """
+    echo "🚀 Deploying stack: ${stackName} with tag: ${imageTag}"
+    withCredentials([usernamePassword(
+        credentialsId: HARBOR_CREDENTIAL,
+        usernameVariable: 'HARBOR_USER',
+        passwordVariable: 'HARBOR_PASS'
+    )]) {
+        sh """
+            echo \$HARBOR_PASS | docker login ${HARBOR_HOST} -u \$HARBOR_USER --password-stdin
+            export HARBOR_HOST=${HARBOR_HOST}
+            export IMAGE_TAG=${imageTag}
+            docker stack deploy --with-registry-auth -c ${composeFile} ${stackName}
+            docker logout ${HARBOR_HOST}
+        """
+    }
 }
 
 def healthCheck(String url, String name) {
