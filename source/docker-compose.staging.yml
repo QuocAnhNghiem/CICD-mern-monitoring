@@ -36,8 +36,12 @@ services:
     image: ${HARBOR_HOST}/mern/backend:${IMAGE_TAG:-latest}
     ports:
       - "5001:5000"
-    env_file:
-      - ./source/backend/.env.staging
+    secrets:
+      - source: backend_env_staging
+        target: backend_env
+        uid: '1001'
+        gid: '1001'
+        mode: 0444
     networks:
       - frontend-net
       - backend-net
@@ -98,3 +102,7 @@ networks:
 volumes:
   mongo_staging_data:
     driver: local
+
+secrets:
+  backend_env_staging:
+    external: true

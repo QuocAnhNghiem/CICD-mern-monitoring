@@ -42,8 +42,12 @@ services:
     image: ${HARBOR_HOST}/mern/backend:${IMAGE_TAG:-latest}
     ports:
       - "5000:5000"
-    env_file:
-      - ./source/backend/.env.production
+    secrets:
+      - source: backend_env_production
+        target: backend_env
+        uid: '1001'
+        gid: '1001'
+        mode: 0444
     networks:
       - frontend-net
       - backend-net
@@ -110,3 +114,7 @@ networks:
 volumes:
   mongo_production_data:
     driver: local
+
+secrets:
+  backend_env_production:
+    external: true
