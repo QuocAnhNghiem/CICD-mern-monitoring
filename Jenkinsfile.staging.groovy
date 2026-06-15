@@ -1,6 +1,6 @@
 // ==================== STAGING PIPELINE ====================
 // Branch: staging
-// Trigger: Manual với nút bấm chọn Action (giống video)
+// Trigger: Manual với nút bấm chọn Action (Active Choices)
 // Actions: start | stop | up_code | rollback
 
 // ==================== BIẾN TOÀN CỤC ====================
@@ -45,7 +45,7 @@ def pushImage(String imageName, String tag) {
 }
 
 def deployStack(String composeFile, String stackName, String imageTag) {
-    echo "🚀 Deploying stack: ${stackName}"
+    echo "🚀 Deploying stack: ${stackName} with tag: ${imageTag}"
     sh """
         export HARBOR_HOST=${HARBOR_HOST}
         export IMAGE_TAG=${imageTag}
@@ -62,27 +62,97 @@ def healthCheck(String url, String name) {
     }
 }
 
-// ==================== PIPELINE ====================
+// ==================== PARAMETERS (Active Choices) ====================
 
 properties([
     parameters([
-        choice(
+        // Nút chọn Action chính
+        [$class: 'ChoiceParameter',
             name: 'ACTION',
-            choices: ['up_code', 'start', 'stop', 'rollback'],
-            description: 'Chọn hành động:\n- up_code: Build + Push + Deploy code mới\n- start: Khởi động stack staging\n- stop: Dừng stack staging\n- rollback: Quay lại phiên bản trước'
-        ),
-        choice(
+            choiceType: 'PT_SINGLE_SELECT',
+            description: 'Chọn hành động:\n- up_code: Build + Push + Deploy code mới\n- start: Khởi động stack\n- stop: Dừng stack\n- rollback: Quay lại phiên bản cũ',
+            script: [$class: 'GroovyScript',
+                script: [
+                    classpath: [],
+                    sandbox: true,
+                    script: "return ['up_code', 'start', 'stop', 'rollback']"
+                ],
+                fallbackScript: [
+                    classpath: [],
+                    sandbox: true,
+                    script: "return ['up_code']"
+                ]
+            ]
+        ],
+
+        // Nút chọn Service (chỉ hiện khi ACTION = up_code)
+        [$class: 'CascadeChoiceParameter',
             name: 'BUILD_SERVICES',
-            choices: ['all', 'backend', 'frontend'],
-            description: 'Chọn service cần build (chỉ áp dụng cho action up_code)'
-        ),
-        string(
+            choiceType: 'PT_SINGLE_SELECT',
+            referencedParameters: 'ACTION',
+            description: 'Chọn service cần build (chỉ dùng khi ACTION = up_code)',
+            script: [$class: 'GroovyScript',
+                script: [
+                    classpath: [],
+                    sandbox: true,
+                    script: """
+                        if (ACTION == 'up_code') {
+                            return ['all', 'backend', 'frontend']
+                        }
+                        return ['N/A - Không cần chọn']
+                    """
+                ],
+                fallbackScript: [
+                    classpath: [],
+                    sandbox: true,
+                    script: "return ['all']"
+                ]
+            ]
+        ],
+
+        // Dropdown danh sách phiên bản để Rollback (chỉ hiện khi ACTION = rollback)
+        [$class: 'CascadeChoiceParameter',
             name: 'ROLLBACK_VERSION',
-            defaultValue: '',
-            description: 'Nhập số Build để rollback (VD: 5). Chỉ dùng khi ACTION = rollback'
-        )
+            choiceType: 'PT_SINGLE_SELECT',
+            referencedParameters: 'ACTION',
+            description: 'Chọn phiên bản để rollback (chỉ dùng khi ACTION = rollback)',
+            script: [$class: 'GroovyScript',
+                script: [
+                    classpath: [],
+                    sandbox: true,
+                    script: """
+                        if (ACTION == 'rollback') {
+                            def tags = []
+                            try {
+                                def proc = ['docker', 'images', '--format', '{{.Tag}}', '34.21.141.11/mern/backend'].execute()
+                                proc.waitFor()
+                                proc.text.trim().split('\\n').each { tag ->
+                                    if (tag && tag != 'staging' && tag != '<none>' && tag != '') {
+                                        tags.add(tag)
+                                    }
+                                }
+                            } catch (Exception e) {
+                                tags.add('Lỗi: ' + e.getMessage())
+                            }
+                            if (tags.isEmpty()) {
+                                return ['Chưa có phiên bản nào']
+                            }
+                            return tags.sort { a, b -> b.toInteger() <=> a.toInteger() }
+                        }
+                        return ['N/A - Không cần chọn']
+                    """
+                ],
+                fallbackScript: [
+                    classpath: [],
+                    sandbox: true,
+                    script: "return ['Không thể tải danh sách phiên bản']"
+                ]
+            ]
+        ]
     ])
 ])
+
+// ==================== PIPELINE CHÍNH ====================
 
 node {
     def backendImage = "${HARBOR_HOST}/${HARBOR_PROJECT}/backend"
@@ -123,8 +193,8 @@ node {
             }
             stage('Rollback') {
                 def rollbackTag = params.ROLLBACK_VERSION
-                if (rollbackTag == '') {
-                    error("❌ Bạn chưa nhập số Build để rollback!")
+                if (rollbackTag == 'N/A - Không cần chọn' || rollbackTag == 'Chưa có phiên bản nào') {
+                    error("❌ Không có phiên bản hợp lệ để rollback!")
                 }
                 echo "🔄 Rolling back to build #${rollbackTag}"
                 deployStack(COMPOSE_FILE, STACK_NAME, rollbackTag)
