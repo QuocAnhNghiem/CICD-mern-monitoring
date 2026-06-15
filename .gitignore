@@ -2,6 +2,8 @@
 *.env
 .env.*
 !.env.example
+!source/frontend/.env.staging
+!source/frontend/.env.production
 
 # ==================== Documentation (chứa thông tin nhạy cảm) ====================
 plan.md
