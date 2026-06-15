@@ -3,7 +3,7 @@ FROM node:18-alpine AS build-stage
 ARG BUILD_ENV=production
 WORKDIR /app
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 COPY . .
 RUN npm run build:${BUILD_ENV}
 

@@ -7,7 +7,7 @@ WORKDIR /app
 
 # Copy package files trước để tận dụng Docker cache
 COPY package*.json ./
-RUN npm install --omit=dev
+RUN npm ci --omit=dev
 
 # Copy source code and set ownership in a single layer to optimize image size
 COPY --chown=appuser:appgroup . .

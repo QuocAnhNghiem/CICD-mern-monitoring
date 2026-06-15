@@ -5,7 +5,13 @@
 
 if [ -f /run/secrets/backend_env ]; then
     echo "📦 Loading environment from Docker Secret..."
-    export $(cat /run/secrets/backend_env | grep -v '^#' | grep -v '^$' | xargs)
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            ''|\#*) continue ;;
+            *=*) export "$line" ;;
+            *) echo "⚠️ Ignoring invalid environment line in backend_env secret" ;;
+        esac
+    done < /run/secrets/backend_env
     echo "✅ Environment loaded successfully"
 fi
 

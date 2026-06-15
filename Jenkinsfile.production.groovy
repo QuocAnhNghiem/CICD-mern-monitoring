@@ -5,12 +5,12 @@
 
 // ==================== BIẾN TOÀN CỤC ====================
 // Không dùng 'def' để biến có thể truy cập từ mọi hàm (Jenkins CPS requirement)
-HARBOR_HOST = '34.21.141.11'
-HARBOR_PROJECT = 'mern'
-HARBOR_CREDENTIAL = 'harbor-credentials'
-STACK_NAME = 'mern-production'
-COMPOSE_FILE = 'source/docker-compose.production.yml'
-WORKER_IP = '34.126.186.86'
+HARBOR_HOST = env.HARBOR_HOST ?: '34.21.141.11'
+HARBOR_PROJECT = env.HARBOR_PROJECT ?: 'mern'
+HARBOR_CREDENTIAL = env.HARBOR_CREDENTIAL ?: 'harbor-credentials'
+STACK_NAME = env.PRODUCTION_STACK_NAME ?: 'mern-production'
+COMPOSE_FILE = env.PRODUCTION_COMPOSE_FILE ?: 'source/docker-compose.production.yml'
+WORKER_IP = env.PRODUCTION_WORKER_IP ?: '34.126.186.86'
 BUILD_ENV = 'production'
 
 // ==================== CÁC HÀM ====================
@@ -31,9 +31,23 @@ def scanImage(String imageName, String tag) {
         docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             aquasec/trivy:latest image \
-            --severity HIGH,CRITICAL --no-progress \
-            ${imageName}:${tag} || true
+            --severity HIGH,CRITICAL --exit-code 1 --no-progress \
+            ${imageName}:${tag}
     """
+}
+
+def testBackend() {
+    dir('source/backend') {
+        sh 'npm ci'
+        sh 'npm test'
+    }
+}
+
+def testFrontend() {
+    dir('source/frontend') {
+        sh 'npm ci'
+        sh 'CI=true npm test'
+    }
 }
 
 def pushImage(String imageName, String tag) {
@@ -43,7 +57,9 @@ def pushImage(String imageName, String tag) {
         passwordVariable: 'HARBOR_PASS'
     )]) {
         sh """
+            set +x
             echo \$HARBOR_PASS | docker login ${HARBOR_HOST} -u \$HARBOR_USER --password-stdin
+            set -x
             docker push ${imageName}:${tag}
             docker push ${imageName}:production
             docker logout ${HARBOR_HOST}
@@ -59,7 +75,9 @@ def deployStack(String composeFile, String stackName, String imageTag) {
         passwordVariable: 'HARBOR_PASS'
     )]) {
         sh """
+            set +x
             echo \$HARBOR_PASS | docker login ${HARBOR_HOST} -u \$HARBOR_USER --password-stdin
+            set -x
             export HARBOR_HOST=${HARBOR_HOST}
             export IMAGE_TAG=${imageTag}
             docker stack deploy --with-registry-auth -c ${composeFile} ${stackName}
@@ -69,12 +87,22 @@ def deployStack(String composeFile, String stackName, String imageTag) {
 }
 
 def healthCheck(String url, String name) {
-    def result = sh(script: "curl -sf ${url}", returnStatus: true)
-    if (result == 0) {
-        echo "✅ ${name} is healthy!"
-    } else {
-        echo "⚠️ ${name} health check failed!"
+    int maxAttempts = 10
+    int waitSeconds = 6
+
+    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+        def result = sh(script: "curl -sf ${url}", returnStatus: true)
+        if (result == 0) {
+            echo "✅ ${name} is healthy!"
+            return
+        }
+        echo "⚠️ ${name} health check failed (${attempt}/${maxAttempts})"
+        if (attempt < maxAttempts) {
+            sleep(waitSeconds)
+        }
     }
+
+    error("❌ ${name} health check failed after ${maxAttempts} attempts: ${url}")
 }
 
 // ==================== PIPELINE ====================
@@ -88,6 +116,11 @@ node {
         stage('Checkout') {
             checkout scm
             echo "✅ Checked out branch: main (production)"
+        }
+
+        stage('Test') {
+            testBackend()
+            testFrontend()
         }
 
         stage('Build Backend') {
@@ -130,6 +163,6 @@ node {
         echo "❌ PRODUCTION PIPELINE FAILED: ${e.getMessage()}"
         throw e
     } finally {
-        sh 'docker system prune -f || true'
+        echo 'ℹ️ Skipping automatic docker system prune. Run a dedicated cleanup job when needed.'
     }
 }
