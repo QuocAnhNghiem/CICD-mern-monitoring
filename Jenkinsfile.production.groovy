@@ -27,7 +27,13 @@ def buildImage(String context, String imageName, String tag, String buildEnv) {
 
 def scanImage(String imageName, String tag) {
     echo "🔍 Scanning: ${imageName}:${tag}"
-    sh "trivy image --severity HIGH,CRITICAL --no-progress ${imageName}:${tag} || true"
+    sh """
+        docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:latest image \
+            --severity HIGH,CRITICAL --no-progress \
+            ${imageName}:${tag} || true
+    """
 }
 
 def pushImage(String imageName, String tag) {
