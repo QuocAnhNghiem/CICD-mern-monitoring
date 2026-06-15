@@ -2,7 +2,9 @@ node_modules
 npm-debug.log
 build
 .env
-.env.*
+.env.local
+!.env.staging
+!.env.production
 .git
 .gitignore
 Dockerfile
