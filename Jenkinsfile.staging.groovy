@@ -4,13 +4,14 @@
 // Actions: start | stop | up_code | rollback
 
 // ==================== BIẾN TOÀN CỤC ====================
-def HARBOR_HOST = '34.21.141.11'
-def HARBOR_PROJECT = 'mern'
-def HARBOR_CREDENTIAL = 'harbor-credentials'
-def STACK_NAME = 'mern-staging'
-def COMPOSE_FILE = 'source/docker-compose.staging.yml'
-def WORKER_IP = '34.126.186.86'
-def BUILD_ENV = 'staging'
+// Không dùng 'def' để biến có thể truy cập từ mọi hàm (Jenkins CPS requirement)
+HARBOR_HOST = '34.21.141.11'
+HARBOR_PROJECT = 'mern'
+HARBOR_CREDENTIAL = 'harbor-credentials'
+STACK_NAME = 'mern-staging'
+COMPOSE_FILE = 'source/docker-compose.staging.yml'
+WORKER_IP = '34.126.186.86'
+BUILD_ENV = 'staging'
 
 // ==================== CÁC HÀM ====================
 
