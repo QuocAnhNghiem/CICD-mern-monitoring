@@ -16,7 +16,10 @@ RUN mkdir /app
 COPY --from=build-stage /app/build /app
 COPY --chown=appuser:appgroup nginx.conf /etc/nginx/conf.d/default.conf
 
-RUN chown -R appuser:appgroup /app /var/cache/nginx /var/log/nginx
+# Fix non-root nginx: PID file + remove user directive + set permissions
+RUN sed -i 's|/run/nginx.pid|/tmp/nginx.pid|g' /etc/nginx/nginx.conf && \
+    sed -i '/^user /d' /etc/nginx/nginx.conf && \
+    chown -R appuser:appgroup /app /var/cache/nginx /var/log/nginx /etc/nginx/conf.d /tmp
 
 USER appuser
 
