@@ -1,6 +1,7 @@
 // ==================== STAGING PIPELINE ====================
 // Branch: staging
-// Trigger: Push code hoặc Manual với nút bấm chọn
+// Trigger: Manual với nút bấm chọn Action (giống video)
+// Actions: start | stop | up_code | rollback
 
 // ==================== BIẾN TOÀN CỤC ====================
 def HARBOR_HOST = '34.21.141.11'
@@ -9,13 +10,18 @@ def HARBOR_CREDENTIAL = 'harbor-credentials'
 def STACK_NAME = 'mern-staging'
 def COMPOSE_FILE = 'source/docker-compose.staging.yml'
 def WORKER_IP = '34.126.186.86'
+def BUILD_ENV = 'staging'
 
 // ==================== CÁC HÀM ====================
 
-def buildImage(String context, String imageName, String tag, String envTag) {
+def buildImage(String context, String imageName, String tag, String buildEnv) {
     echo "🔨 Building image: ${imageName}:${tag}"
-    sh "docker build -t ${imageName}:${tag} ${context}"
-    sh "docker tag ${imageName}:${tag} ${imageName}:${envTag}-latest"
+    if (buildEnv != null) {
+        sh "docker build --build-arg BUILD_ENV=${buildEnv} -t ${imageName}:${tag} ${context}"
+    } else {
+        sh "docker build -t ${imageName}:${tag} ${context}"
+    }
+    sh "docker tag ${imageName}:${tag} ${imageName}:staging"
 }
 
 def scanImage(String imageName, String tag) {
@@ -23,7 +29,7 @@ def scanImage(String imageName, String tag) {
     sh "trivy image --severity HIGH,CRITICAL --no-progress ${imageName}:${tag} || true"
 }
 
-def pushImage(String imageName, String tag, String envTag) {
+def pushImage(String imageName, String tag) {
     withCredentials([usernamePassword(
         credentialsId: HARBOR_CREDENTIAL,
         usernameVariable: 'HARBOR_USER',
@@ -32,10 +38,19 @@ def pushImage(String imageName, String tag, String envTag) {
         sh """
             echo \$HARBOR_PASS | docker login ${HARBOR_HOST} -u \$HARBOR_USER --password-stdin
             docker push ${imageName}:${tag}
-            docker push ${imageName}:${envTag}-latest
+            docker push ${imageName}:staging
             docker logout ${HARBOR_HOST}
         """
     }
+}
+
+def deployStack(String composeFile, String stackName, String imageTag) {
+    echo "🚀 Deploying stack: ${stackName}"
+    sh """
+        export HARBOR_HOST=${HARBOR_HOST}
+        export IMAGE_TAG=${imageTag}
+        docker stack deploy -c ${composeFile} ${stackName}
+    """
 }
 
 def healthCheck(String url, String name) {
@@ -52,19 +67,19 @@ def healthCheck(String url, String name) {
 properties([
     parameters([
         choice(
+            name: 'ACTION',
+            choices: ['up_code', 'start', 'stop', 'rollback'],
+            description: 'Chọn hành động:\n- up_code: Build + Push + Deploy code mới\n- start: Khởi động stack staging\n- stop: Dừng stack staging\n- rollback: Quay lại phiên bản trước'
+        ),
+        choice(
             name: 'BUILD_SERVICES',
             choices: ['all', 'backend', 'frontend'],
-            description: 'Chọn service cần build và deploy'
+            description: 'Chọn service cần build (chỉ áp dụng cho action up_code)'
         ),
-        booleanParam(
-            name: 'SKIP_SCAN',
-            defaultValue: false,
-            description: 'Bỏ qua bước Security Scan (để test nhanh)'
-        ),
-        booleanParam(
-            name: 'SKIP_DEPLOY',
-            defaultValue: false,
-            description: 'Chỉ Build + Push, không Deploy'
+        string(
+            name: 'ROLLBACK_VERSION',
+            defaultValue: '',
+            description: 'Nhập số Build để rollback (VD: 5). Chỉ dùng khi ACTION = rollback'
         )
     ])
 ])
@@ -75,71 +90,100 @@ node {
     def buildTag = env.BUILD_NUMBER
 
     try {
+        // ==================== ACTION: STOP ====================
+        if (params.ACTION == 'stop') {
+            stage('Stop Staging') {
+                echo "🛑 Stopping stack: ${STACK_NAME}"
+                sh "docker stack rm ${STACK_NAME} || true"
+                echo "✅ Stack ${STACK_NAME} stopped"
+            }
+            return
+        }
+
+        // ==================== ACTION: START ====================
+        if (params.ACTION == 'start') {
+            stage('Checkout') {
+                checkout scm
+            }
+            stage('Start Staging') {
+                deployStack(COMPOSE_FILE, STACK_NAME, 'staging')
+            }
+            stage('Health Check') {
+                sleep(30)
+                healthCheck("http://${WORKER_IP}:5001/health", "Backend")
+                healthCheck("http://${WORKER_IP}:81/", "Frontend")
+            }
+            return
+        }
+
+        // ==================== ACTION: ROLLBACK ====================
+        if (params.ACTION == 'rollback') {
+            stage('Checkout') {
+                checkout scm
+            }
+            stage('Rollback') {
+                def rollbackTag = params.ROLLBACK_VERSION
+                if (rollbackTag == '') {
+                    error("❌ Bạn chưa nhập số Build để rollback!")
+                }
+                echo "🔄 Rolling back to build #${rollbackTag}"
+                deployStack(COMPOSE_FILE, STACK_NAME, rollbackTag)
+            }
+            stage('Health Check') {
+                sleep(30)
+                healthCheck("http://${WORKER_IP}:5001/health", "Backend")
+                healthCheck("http://${WORKER_IP}:81/", "Frontend")
+            }
+            return
+        }
+
+        // ==================== ACTION: UP_CODE ====================
         stage('Checkout') {
             checkout scm
-            echo "✅ Checked out branch: ${env.BRANCH_NAME ?: 'staging'}"
+            echo "✅ Checked out branch: staging"
         }
 
-        // ========== BUILD ==========
         stage('Build Images') {
             if (params.BUILD_SERVICES == 'all' || params.BUILD_SERVICES == 'backend') {
-                echo ">>> Building Backend..."
-                buildImage('source/backend', backendImage, buildTag, 'staging')
+                buildImage('source/backend', backendImage, buildTag, null)
             }
             if (params.BUILD_SERVICES == 'all' || params.BUILD_SERVICES == 'frontend') {
-                echo ">>> Building Frontend..."
-                sh 'cp source/frontend/.env.staging source/frontend/.env.production'
-                buildImage('source/frontend', frontendImage, buildTag, 'staging')
+                buildImage('source/frontend', frontendImage, buildTag, BUILD_ENV)
             }
         }
 
-        // ========== SCAN ==========
-        if (!params.SKIP_SCAN) {
-            stage('Security Scan') {
-                if (params.BUILD_SERVICES == 'all' || params.BUILD_SERVICES == 'backend') {
-                    scanImage(backendImage, buildTag)
-                }
-                if (params.BUILD_SERVICES == 'all' || params.BUILD_SERVICES == 'frontend') {
-                    scanImage(frontendImage, buildTag)
-                }
+        stage('Security Scan') {
+            if (params.BUILD_SERVICES == 'all' || params.BUILD_SERVICES == 'backend') {
+                scanImage(backendImage, buildTag)
             }
-        } else {
-            echo "⏭️ Skipping Security Scan"
+            if (params.BUILD_SERVICES == 'all' || params.BUILD_SERVICES == 'frontend') {
+                scanImage(frontendImage, buildTag)
+            }
         }
 
-        // ========== PUSH ==========
         stage('Push to Harbor') {
             if (params.BUILD_SERVICES == 'all' || params.BUILD_SERVICES == 'backend') {
-                pushImage(backendImage, buildTag, 'staging')
+                pushImage(backendImage, buildTag)
             }
             if (params.BUILD_SERVICES == 'all' || params.BUILD_SERVICES == 'frontend') {
-                pushImage(frontendImage, buildTag, 'staging')
+                pushImage(frontendImage, buildTag)
             }
         }
 
-        // ========== DEPLOY ==========
-        if (!params.SKIP_DEPLOY) {
-            stage('Deploy to Staging') {
-                echo "🚀 Deploying stack: ${STACK_NAME}"
-                sh """
-                    export HARBOR_HOST=${HARBOR_HOST}
-                    export IMAGE_TAG=${buildTag}
-                    docker stack deploy -c ${COMPOSE_FILE} ${STACK_NAME}
-                """
-            }
+        stage('Deploy to Staging') {
+            deployStack(COMPOSE_FILE, STACK_NAME, buildTag)
+        }
 
-            stage('Health Check') {
-                echo "⏳ Waiting 30s for services to start..."
-                sleep(30)
-                healthCheck("http://${WORKER_IP}:5001/health", "Backend Staging")
-                healthCheck("http://${WORKER_IP}:81/", "Frontend Staging")
-            }
-        } else {
-            echo "⏭️ Skipping Deploy"
+        stage('Health Check') {
+            echo "⏳ Waiting 30s for services to start..."
+            sleep(30)
+            healthCheck("http://${WORKER_IP}:5001/health", "Backend Staging")
+            healthCheck("http://${WORKER_IP}:81/", "Frontend Staging")
         }
 
         echo """
         ✅✅✅ STAGING PIPELINE SUCCESS ✅✅✅
+        Action:   ${params.ACTION}
         Services: ${params.BUILD_SERVICES}
         Backend:  http://${WORKER_IP}:5001
         Frontend: http://${WORKER_IP}:81
