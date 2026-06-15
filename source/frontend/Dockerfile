@@ -7,21 +7,11 @@ RUN npm install
 COPY . .
 RUN npm run build:${BUILD_ENV}
 
-# Production stage
-FROM nginx:alpine AS production-stage
+# Production stage - dùng nginx-unprivileged (đã hỗ trợ non-root sẵn)
+FROM nginxinc/nginx-unprivileged:alpine AS production-stage
 
-RUN addgroup -g 1001 -S appgroup && adduser -u 1001 -S appuser -G appgroup
-RUN mkdir /app
-
-COPY --from=build-stage /app/build /app
-COPY --chown=appuser:appgroup nginx.conf /etc/nginx/conf.d/default.conf
-
-# Fix non-root nginx: PID file + remove user directive + set permissions
-RUN sed -i 's|/run/nginx.pid|/tmp/nginx.pid|g' /etc/nginx/nginx.conf && \
-    sed -i '/^user /d' /etc/nginx/nginx.conf && \
-    chown -R appuser:appgroup /app /var/cache/nginx /var/log/nginx /etc/nginx/conf.d /tmp
-
-USER appuser
+COPY --from=build-stage /app/build /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 8080
 
