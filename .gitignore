@@ -11,7 +11,6 @@ gcp-vm-detail-guide.md
 
 # ==================== Dependencies ====================
 node_modules/
-package-lock.json
 
 # ==================== Build Output ====================
 build/
