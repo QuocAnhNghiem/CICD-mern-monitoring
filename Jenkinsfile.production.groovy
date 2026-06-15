@@ -11,6 +11,7 @@ HARBOR_CREDENTIAL = env.HARBOR_CREDENTIAL ?: 'harbor-credentials'
 STACK_NAME = env.PRODUCTION_STACK_NAME ?: 'mern-production'
 COMPOSE_FILE = env.PRODUCTION_COMPOSE_FILE ?: 'source/docker-compose.production.yml'
 WORKER_IP = env.PRODUCTION_WORKER_IP ?: '34.126.186.86'
+NODEJS_TOOL = env.NODEJS_TOOL ?: 'nodejs-18'
 BUILD_ENV = 'production'
 
 // ==================== CÁC HÀM ====================
@@ -36,17 +37,28 @@ def scanImage(String imageName, String tag) {
     """
 }
 
+def withNodeTool(Closure body) {
+    def nodeHome = tool name: NODEJS_TOOL, type: 'jenkins.plugins.nodejs.tools.NodeJSInstallation'
+    withEnv(["PATH=${nodeHome}/bin:${env.PATH}"]) {
+        body()
+    }
+}
+
 def testBackend() {
-    dir('source/backend') {
-        sh 'npm ci'
-        sh 'npm test'
+    withNodeTool {
+        dir('source/backend') {
+            sh 'npm ci'
+            sh 'npm test'
+        }
     }
 }
 
 def testFrontend() {
-    dir('source/frontend') {
-        sh 'npm ci'
-        sh 'CI=true npm test'
+    withNodeTool {
+        dir('source/frontend') {
+            sh 'npm ci'
+            sh 'CI=true npm test'
+        }
     }
 }
 
