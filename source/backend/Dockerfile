@@ -1,16 +1,24 @@
-FROM node:18-alpine
-
-# Tạo non-root user
-RUN addgroup -g 1001 -S appgroup && adduser -u 1001 -S appuser -G appgroup
+FROM node:22-alpine AS deps
 
 WORKDIR /app
 
-# Copy package files trước để tận dụng Docker cache
 COPY package*.json ./
 RUN npm ci --omit=dev
 
-# Copy source code and set ownership in a single layer to optimize image size
-COPY --chown=appuser:appgroup . .
+FROM node:22-alpine AS runtime
+
+RUN apk upgrade --no-cache \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \
+    && addgroup -g 1001 -S appgroup \
+    && adduser -u 1001 -S appuser -G appgroup
+
+WORKDIR /app
+
+COPY --from=deps --chown=appuser:appgroup /app/node_modules ./node_modules
+COPY --chown=appuser:appgroup package*.json ./
+COPY --chown=appuser:appgroup server.js entrypoint.sh ./
+
+RUN chmod +x /app/entrypoint.sh
 
 USER appuser
 
@@ -18,9 +26,6 @@ EXPOSE 5000
 
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
   CMD wget -qO- http://127.0.0.1:5000/health || exit 1
-
-COPY --chown=appuser:appgroup entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
 
 ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["node", "server.js"]
