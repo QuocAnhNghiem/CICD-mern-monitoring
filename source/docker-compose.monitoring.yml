@@ -36,6 +36,7 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     secrets:
       - grafana_admin_password
     ports:
@@ -77,13 +78,30 @@ services:
           memory: 128M
 
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    command:
+      - '--docker_only=true'
+      - '--docker=unix:///var/run/docker.sock'
+      - '--housekeeping_interval=30s'
+      # Tránh lỗi đọc layerdb/disk trên Docker Engine mới.
+      - '--disable_metrics=disk,diskIO'
+      # Giữ Docker metadata để Prometheus/Grafana có thể thấy container name/image/labels.
+      - '--store_container_labels=true'
+      - '--allow_dynamic_housekeeping=true'
     volumes:
-      - /:/rootfs:ro
+      # rslave giúp cAdvisor nhìn được mount namespace/container mounts của host trong Docker/Swarm mới.
+      - /:/rootfs:ro,rslave
+      - /proc:/host/proc:ro
+      - /sys:/sys:ro,rslave
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      - /var/lib/docker:/var/lib/docker:ro,rslave
+      # Mount cả /var/run để Docker API socket và runtime socket giữ đúng layout như trên host.
       - /var/run:/var/run:ro
-      - /sys:/sys:ro
-      - /var/lib/docker:/var/lib/docker:ro
+      # Cho phép cAdvisor đọc OOM/kernel message; chỉ read-only, không ghi vào host.
+      - /dev/kmsg:/dev/kmsg:ro
       - /dev/disk:/dev/disk:ro
+    ports:
+      - "8081:8080"
     networks:
       - monitoring
     deploy:
