@@ -1,71 +1,82 @@
 # 🚀 MERN CI/CD Pipeline — Jenkins · Harbor · Docker Swarm · Monitoring
 
-Hệ thống CI/CD hoàn chỉnh (Production-like) cho ứng dụng Full-stack MERN trên Google Cloud Platform. Tự động hóa toàn bộ quy trình từ lúc code được push cho đến khi deploy zero-downtime lên server, tích hợp bảo mật và giám sát hệ thống thời gian thực.
+A production-like CI/CD system for a full-stack MERN application on Google Cloud Platform. The project automates the workflow from code push to a start-first rolling deployment, with integrated security scanning and real-time infrastructure monitoring.
 
-**Kết quả đạt được:** So với quy trình deploy thủ công (SSH, build, kiểm tra), pipeline tự động giúp rút ngắn thời gian triển khai từ hàng chục phút thao tác tay xuống còn **khoảng 6.5 phút** (thời gian chạy Full Pipeline thực tế trên Jenkins, bao gồm cả Security Scan và Healthcheck), loại bỏ hoàn toàn rủi ro do sai sót con người, và đưa thời gian rollback xuống dưới 30 giây nhờ versioned image trên Harbor.
+**Result:** A representative manual deployment took approximately **20 minutes** across SSH access, tests, image builds, security scanning, registry pushes, deployment, and verification. Automating the same end-to-end workflow reduced a full Jenkins production run to approximately **6.5 minutes**—a **67.5% reduction**, rounded to **68%**. Versioned Harbor images also provide a controlled rollback path with post-rollback health verification.
+
+### Deployment Time Benchmark
+
+| Workflow | Included steps | Duration |
+|---|---|---:|
+| Manual deployment | SSH, test, build, scan, push, deploy, verify | ~20 minutes |
+| Jenkins pipeline | Automated end-to-end workflow with the same scope | ~6.5 minutes |
+| Deployment-time reduction | `(20 - 6.5) / 20 × 100` | **~68% reduction** |
+
+The figures above compare workflows with the same functional scope. They represent the current lab environment and may vary with dependency caching, image size, network speed, and VM capacity.
 
 ---
 
-## 📌 Tổng quan Pipeline & Công nghệ (Tech Stack)
+## 📌 Pipeline Overview & Tech Stack
 
 ![CI/CD Pipeline Architecture](picture/pipline.png)
 
-| Lớp (Layer) | Công nghệ sử dụng | Điểm nổi bật trong dự án |
+| Layer | Technologies | Project Highlights |
 |---|---|---|
-| **Application** | MERN Stack (MongoDB, Express, React, Node.js) | Tách biệt hoàn toàn Frontend/Backend, dễ dàng scale. |
-| **CI/CD Engine** | **Jenkins Pipeline (Groovy) + Webhooks** | **Pipeline as Code, Parameterized Builds, Auto webhook.** |
-| **Container Registry**| Harbor (Self-hosted, Private) | Quản lý phiên bản Image (Versioned Tags), bảo mật Registry. |
-| **Orchestration** | Docker Swarm (Multi-node Cluster) | Rolling Update Zero-downtime, tự phục hồi (Self-healing). |
-| **Security Scan** | Trivy (Vulnerability Scanner) | DevSecOps: Chặn đứng lỗ hổng HIGH/CRITICAL trước khi deploy. |
-| **Monitoring** | Prometheus, Grafana, Node Exporter, cAdvisor | Dashboards thời gian thực, **Hệ thống Cảnh báo (Alerts)**. |
-| **Infrastructure** | Google Cloud Platform (3 VMs) | Phân tách Manager, Worker và Registry an toàn. |
+| **Application** | MERN Stack (MongoDB, Express, React, Node.js) | Separate frontend and backend services for easier scaling and maintenance. |
+| **CI/CD Engine** | **Jenkins Pipeline (Groovy) + Webhooks** | Pipeline as Code, parameterized builds, and automated webhook triggers. |
+| **Container Registry** | Harbor (self-hosted, private registry) | Versioned image tags and private image management. |
+| **Orchestration** | Docker Swarm (multi-node cluster) | Start-first rolling updates, automatic failure rollback, and self-healing services. |
+| **Security Scan** | Trivy (vulnerability scanner) | DevSecOps gate to block HIGH/CRITICAL vulnerabilities before deployment. |
+| **Monitoring** | Prometheus, Grafana, Node Exporter, cAdvisor | Real-time host and container dashboards; alerting is documented as a future improvement. |
+| **Infrastructure** | Google Cloud Platform (3 VMs) | Separate infrastructure roles for manager, worker, and registry/monitoring services. |
 
 ![GCP VM Instances](picture/GCP-VM.png)
 
-### 📁 Cấu trúc Thư mục (Repository Layout)
+### 📁 Repository Layout
 
 ```text
 .
-├── Jenkinsfile.production.groovy       # Kịch bản Pipeline tự động cho Production (7 stages)
-├── Jenkinsfile.staging.groovy          # Kịch bản Pipeline linh hoạt cho Staging (Parameterized)
-├── demo-troubleshooting-notes.md       # Sổ tay ghi chép lỗi thực tế và cách fix (cAdvisor)
-├── picture/                            # Chứa ảnh minh họa hệ thống và dashboards
+├── Jenkinsfile.production.groovy       # Automated production pipeline script (8 stages)
+├── Jenkinsfile.staging.groovy          # Flexible staging pipeline script (parameterized)
+├── demo-troubleshooting-notes.md       # Practical troubleshooting notes for the cAdvisor issue
+├── picture/                            # Architecture diagrams, pipeline screenshots, and dashboards
 └── source/
-    ├── backend/                        # Source code Backend (Node.js) & Dockerfile multi-stage
-    ├── frontend/                       # Source code Frontend (React) & Dockerfile unprivileged
-    ├── docker-compose.staging.yml      # Cấu hình Swarm Stack cho Staging
-    ├── docker-compose.production.yml   # Cấu hình Swarm Stack Zero-downtime cho Production
-    ├── docker-compose.monitoring.yml   # Cấu hình Stack Monitoring (Prometheus, Grafana, cAdvisor)
-    └── monitoring/                     # Thư mục chứa cấu hình tĩnh (prometheus.yml, grafana dashboards)
+    ├── backend/                        # Backend source code (Node.js) and multi-stage Dockerfile
+    ├── frontend/                       # Frontend source code (React) and unprivileged Nginx Dockerfile
+    ├── docker-compose.staging.yml      # Docker Swarm stack configuration for staging
+    ├── docker-compose.production.yml   # Docker Swarm stack configuration for start-first production deployment
+    ├── docker-compose.monitoring.yml   # Monitoring stack configuration (Prometheus, Grafana, cAdvisor)
+    └── monitoring/                     # Static monitoring configuration (prometheus.yml, Grafana dashboards)
 ```
 
 ---
 
-## 🛠️ CHI TIẾT 4 GIAI ĐOẠN (STAGES) TRIỂN KHAI
+## 🛠️ Implementation Phases
 
-Dự án được chia thành 4 giai đoạn chính, mô phỏng chuẩn xác luồng làm việc DevOps thực tế trong doanh nghiệp, với **Jenkins là "trái tim" điều phối mọi hoạt động.**
+The project is divided into four main phases that simulate a practical DevOps workflow, with **Jenkins acting as the main orchestration layer**.
 
 ---
 
-### STAGE 1: Container hóa ứng dụng MERN & Setup Repository
+### Phase 1: Containerizing the MERN Application & Setting Up the Repository
 
 ![Stage 1 - Containerize](picture/stage1.png)
 
-Trong giai đoạn này, ứng dụng MERN được đóng gói vào các Docker container. **Điểm ăn tiền của phần này là khả năng viết Dockerfile tối ưu:** image phải siêu nhẹ, build cực nhanh nhờ cache, và đặc biệt phải bảo mật tuyệt đối (chạy dưới quyền non-root).
+This phase focuses on packaging the MERN application into Docker containers. The Dockerfiles are designed to keep runtime images small, cache-friendly, and secure by using multi-stage builds and non-root users.
 
-#### 1. Dockerize Backend (Node.js) - Tối ưu bảo mật
-Sử dụng Multi-stage build để cài đặt dependencies riêng. Ở runtime, `npm` và các tool thừa bị loại bỏ hoàn toàn.
+#### 1. Backend Dockerization (Node.js) — Security-focused Runtime
+
+The backend image uses a multi-stage build to install dependencies separately. In the runtime stage, unnecessary tools such as `npm` and `npx` are removed to reduce the attack surface.
 
 ```dockerfile
-# Stage 1: Cài dependencies tách riêng (tận dụng Docker cache layer)
+# Stage 1: Install dependencies separately to take advantage of Docker layer caching
 FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev
 
-# Stage 2: Runtime - chỉ giữ những gì cần thiết để chạy app
+# Stage 2: Runtime - keep only what is required to run the app
 FROM node:22-alpine AS runtime
-# Cập nhật OS packages (vá lỗ hổng bảo mật) + Xóa npm/npx khỏi runtime (giảm attack surface)
+# Upgrade OS packages, remove npm/npx from runtime, and create a non-root user
 RUN apk upgrade --no-cache \
     && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \
     && addgroup -g 1001 -S appgroup \
@@ -76,25 +87,26 @@ COPY --chown=appuser:appgroup package*.json ./
 COPY --chown=appuser:appgroup server.js entrypoint.sh ./
 RUN chmod +x /app/entrypoint.sh
 
-# Chạy container dưới quyền non-root (UID 1001)
+# Run the container as a non-root user (UID 1001)
 USER appuser
 EXPOSE 5000
 
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
   CMD wget -qO- http://127.0.0.1:5000/health || exit 1
 
-# entrypoint.sh đọc Docker Secret từ /run/secrets/backend_env và export thành env vars
+# entrypoint.sh reads Docker Secrets from /run/secrets/backend_env and exports them as environment variables
 ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["node", "server.js"]
 ```
 
-#### 2. Dockerize Frontend (React + Nginx) - Unprivileged
-React được build ra các file tĩnh HTML/JS/CSS, sau đó dùng Nginx để serve. Tránh dùng Nginx bản mặc định (yêu cầu quyền root để binding port 80).
+#### 2. Frontend Dockerization (React + Nginx) — Unprivileged Nginx
+
+The React application is built into static HTML, JavaScript, and CSS assets, then served through an unprivileged Nginx image. This avoids using the default Nginx image, which normally requires root privileges to bind to port 80.
 
 ```dockerfile
 # Stage 1: Build React app
 FROM node:18-alpine AS build-stage
-# BUILD_ENV quyết định file .env nào được load (staging hay production)
+# BUILD_ENV controls which .env file is loaded (staging or production)
 ARG BUILD_ENV=production
 WORKDIR /app
 COPY package*.json ./
@@ -102,10 +114,10 @@ RUN npm ci
 COPY . .
 RUN npm run build:${BUILD_ENV}
 
-# Stage 2: Serve bằng Nginx Unprivileged (non-root, port 8080)
+# Stage 2: Serve with unprivileged Nginx (non-root, port 8080)
 FROM nginxinc/nginx-unprivileged:alpine AS production-stage
 COPY --from=build-stage /app/build /usr/share/nginx/html
-# Custom nginx config cho React SPA (xử lý client-side routing)
+# Custom Nginx configuration for React SPA routing
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 8080
 CMD ["nginx", "-g", "daemon off;"]
@@ -113,14 +125,15 @@ CMD ["nginx", "-g", "daemon off;"]
 
 ---
 
-### STAGE 2: Setup cho CI/CD Pipelines & Docker Swarm
+### Phase 2: Setting Up CI/CD Pipelines & Docker Swarm
 
 ![Stage 2 - Setup Pipelines](picture/stage2.png)
 
-Giai đoạn xây dựng nền móng hạ tầng: kết nối Jenkins với Harbor bằng credentials, tạo network overlay cho Docker Swarm, và cấu hình các Jenkins Pipeline kịch bản.
+This phase establishes the infrastructure foundation: connecting Jenkins with Harbor credentials, creating Docker Swarm overlay networks, and defining Jenkins pipelines as code.
 
-#### Điểm sáng Kỹ thuật: Cấu hình Zero-downtime Deployment
-Cấu hình `docker-compose.production.yml` được tối ưu hóa cho môi trường Swarm để đảm bảo người dùng không bị gián đoạn khi hệ thống deploy:
+#### Technical Highlight: Start-first Rolling Deployment Configuration
+
+The `docker-compose.production.yml` file uses two replicas and a start-first update strategy to minimize interruption during deployments. This is a resilience design choice; the project does not claim a formal availability SLA or load-tested zero-downtime guarantee.
 
 ```yaml
 services:
@@ -131,10 +144,10 @@ services:
     deploy:
       replicas: 2
       update_config:
-        parallelism: 1         # Cập nhật từng container một
-        delay: 10s             # Chờ 10s giữa mỗi lần cập nhật
-        order: start-first     # QUAN TRỌNG: Khởi động container mới lên trước, khi nào sống (pass healthcheck) mới tắt container cũ
-        failure_action: rollback # Tự động lùi về phiên bản cũ ngay lập tức nếu deploy lỗi
+        parallelism: 1           # Update one container at a time
+        delay: 10s               # Wait 10 seconds between updates
+        order: start-first       # Start the new container before stopping the old one
+        failure_action: rollback # Automatically roll back if the deployment fails
       placement:
         constraints:
           - node.labels.env == worker
@@ -142,26 +155,29 @@ services:
 
 ---
 
-### STAGE 3: Deploy to Staging Server (Linh hoạt với Jenkins Parameters)
+### Phase 3: Deploying to Staging with Jenkins Parameters
 
 ![Stage 3 - Deploy Staging](picture/stage3.png)
 
-Môi trường Staging (Dành cho QA/Tester) không cần tự động hóa hoàn toàn mà cần sự linh hoạt cao độ. Tôi khai thác tối đa sức mạnh của **Jenkins Active Choices Plugin** để tạo giao diện điều khiển (Parameterized Pipeline).
+The staging environment is designed for QA and developer validation. Instead of being fully automatic, it provides controlled deployment options through **Jenkins Active Choices Plugin** and a parameterized pipeline.
 
 ![Jenkins Staging Pipeline Actions](picture/jenkin-staging-action.png)
 
-Pipeline cung cấp giao diện trực quan cho Developer/QA với các nút:
-- ▶️ **START**: Bật hệ thống Staging.
-- ⏹️ **STOP**: Tắt hạ tầng Staging đi khi không dùng.
-- ⬆️ **UP_CODE (Selective Deploy)**: Chỉ build Frontend hoặc Backend để tiết kiệm tối đa thời gian chờ đợi của Dev.
-- ⏪ **ROLLBACK**: Quay lại version cũ (Groovy Script trong Jenkins tự động gọi Harbor API để lấy danh sách version tags thả vào Dropdown).
+The pipeline provides a simple control interface for developers and QA:
+
+- ▶️ **START**: Start the staging environment.
+- ⏹️ **STOP**: Stop the staging environment when it is not in use.
+- ⬆️ **UP_CODE (Selective Deploy)**: Build and deploy only the frontend or backend to reduce waiting time.
+- ⏪ **ROLLBACK**: Roll back to a previous version selected from versioned images available on the Jenkins host, then run health checks against the restored services.
 
 ![Jenkins Staging Overview](picture/jenkin-staging.png)
 
-#### Trích đoạn Jenkinsfile: Xử lý Logic Parametized Bằng Groovy Script
-Jenkinsfile sử dụng cú pháp Groovy mạnh mẽ với khối `try/catch` để điều hướng logic triển khai:
+#### Jenkinsfile Excerpt: Handling Parameterized Logic with Groovy
+
+The Jenkinsfile uses Groovy syntax with `try/catch` blocks to control deployment logic:
+
 ```groovy
-// Logic lựa chọn chức năng thông minh dựa trên biến môi trường (Params)
+// Smart deployment logic based on Jenkins parameters
 stage('Deploy to Staging') {
     if (params.BUILD_SERVICES == 'all') {
         deployStack(COMPOSE_FILE, STACK_NAME, buildTag)
@@ -173,56 +189,63 @@ stage('Deploy to Staging') {
 
 ---
 
-### STAGE 4: Deploy to Production Server & Hệ thống Alerting
+### Phase 4: Deploying to Production & Monitoring
 
 ![Stage 4 - Deploy Production](picture/stage4.png)
 
-Production (Môi trường người dùng thật) yêu cầu ổn định tuyệt đối. Pipeline Production là một kiệt tác tự động hoá 100%, được **Trigger bằng Webhook** từ GitHub, xử lý qua 7 bước nghiêm ngặt.
+The production-like environment prioritizes stability and repeatability. The production pipeline is triggered by a GitHub webhook and runs through eight controlled stages before marking a deployment as successful.
 
 ![Jenkins Production Overview](picture/jenkin-production.png)
 
-#### 1. Luồng chạy Jenkins 7 Bước (Tổng thời gian ~6.5 phút)
-1. **Checkout**: Lấy code từ `main` tự động qua Webhook.
-2. **Test**: Jenkins gọi Node Tool chạy Unit tests (bảo vệ chức năng).
-3. **Build Images**: Tạo Docker images gán tag tự động bằng `${env.BUILD_NUMBER}`.
-4. **Security Scan (DevSecOps)**: Jenkins tích hợp Trivy. **Nếu Trivy phát hiện lỗi HIGH/CRITICAL, Jenkins báo FAIL và chặn deploy lập tức.**
-5. **Push to Harbor**: Jenkins gọi lệnh docker login an toàn qua hàm `withCredentials(...)` để giấu thông tin mật khẩu, đẩy lên Harbor.
-6. **Deploy to Swarm**: Roll-out lên Swarm theo chính sách Zero-downtime.
-7. **Health Check**: Jenkins chạy vòng lặp kiểm tra sức khỏe endpoint, đảm bảo app trả về HTTP 200 mới đánh dấu Pipeline màu xanh (Success).
+#### 1. Jenkins Production Pipeline — 8 Stages (~6.5 minutes)
 
-#### 2. Giám sát hệ thống & Alerting (Monitoring)
-Hệ thống được thiết kế với "đôi mắt" túc trực ngày đêm: Prometheus + Grafana thu thập metrics của Host (Node Exporter) và Container (cAdvisor).
+1. **Checkout**: Pull the latest code from `main` through a GitHub webhook.
+2. **Test**: Run unit tests using the configured Node.js tool in Jenkins.
+3. **Build Backend**: Build the backend image and tag it with `${env.BUILD_NUMBER}`.
+4. **Build Frontend**: Build the frontend image for the production environment with the same versioned tag.
+5. **Security Scan (DevSecOps)**: Run Trivy scans. If HIGH/CRITICAL vulnerabilities are found, Jenkins fails the build and stops the deployment.
+6. **Push to Harbor**: Use `withCredentials(...)` to authenticate safely and push approved images to Harbor.
+7. **Deploy to Swarm**: Roll out the new version using the start-first Docker Swarm update strategy.
+8. **Health Check**: Verify application health endpoints and require successful responses before marking the pipeline as successful.
+
+#### 2. Monitoring
+
+Prometheus and Grafana are used to collect and visualize host metrics through Node Exporter and container metrics through cAdvisor.
 
 ![Grafana Dashboard 1](picture/grafana.png)
 ![Grafana Dashboard 2](picture/grafana-2.png)
 
-*Dashboard thể hiện rõ lượng tài nguyên tiêu thụ từng service, số lượng container đang chạy, giúp phát hiện Memory Leak.*
+*The dashboards show resource usage per service and the number of running containers, making it easier to detect abnormal behavior such as memory leaks.*
 
-**Hệ thống Cảnh báo sớm (Alerting Rules):**
-*(Ghi chú: Hình ảnh chi tiết Alerting sẽ cập nhật sau)*
-Dự án không chỉ vẽ biểu đồ mà còn cài đặt các **Alert Rules**, sẵn sàng đẩy thông báo nếu hệ thống có vấn đề:
-- 🔴 **cAdvisor Down**: Cảnh báo khi mất liên lạc với hệ thống thu thập metrics.
-- 🟡 **Docker Labels Missing**: Phát hiện sự cố cAdvisor trên phiên bản Docker mới.
-- 🟠 **High CPU/Memory Usage**: Cảnh báo khi một service ăn hơn 80% RAM hoặc CPU.
+#### 3. Planned Alerting Design (Not Yet Implemented)
 
----
+The current repository provisions dashboards and metrics collection only. Prometheus alert rule files and Alertmanager are intentionally left as a future improvement. A production-oriented alerting design would include:
 
-## 🔧 Kỹ năng Xử lý sự cố (Troubleshooting & Debugging)
+- 🔴 **cAdvisor Down**: Trigger when the metrics collector remains unavailable for a defined duration.
+- 🟡 **Docker Labels Missing**: Detect when cAdvisor is reachable but Docker Swarm service labels disappear.
+- 🟠 **High CPU/Memory Usage**: Trigger only after sustained utilization above a chosen threshold to avoid noisy alerts.
 
-Làm DevOps không chỉ là chạy tool, mà là kỹ năng Debug hệ thống khi xảy ra sự cố. Dưới đây là bài học đắt giá của tôi trong dự án:
-
-**Sự cố:** Mất toàn bộ metadata của Docker Swarm Container trên Grafana.
-- **Nguyên nhân:** Khi sử dụng Docker Engine 29+, cấu trúc lưu trữ nội bộ `layerdb` bị Docker thay đổi, khiến cAdvisor bị crash loop và mất nhãn (labels).
-- **Xử lý:** Tôi không bỏ cuộc hay hạ cấp hệ điều hành. Tôi tự research, viết một kịch bản **Shell Script kết hợp Cronjob Linux** chạy mỗi phút để tạo các file dummy `mount-id` giả lập môi trường, đánh lừa cAdvisor hoạt động mượt mà trở lại.
-
-Chi tiết phân tích lỗi, đọc tại file: [👉 demo-troubleshooting-notes.md](demo-troubleshooting-notes.md).
+The implementation would add Prometheus `rule_files`, version-controlled rule definitions, Alertmanager routing, and a tested notification receiver. These items are not presented as completed features in this project.
 
 ---
 
-## 🏆 ĐIỂM CHẠM VỚI NHÀ TUYỂN DỤNG (Why I Fit For Your Team)
+## 🔧 Troubleshooting & Debugging
 
-1. **Jenkins Expertise:** Làm chủ Jenkins Pipeline-as-Code bằng Groovy (không dùng UI click), tạo Parameterized Build với Active Choices Plugin, và tích hợp Webhook tự động.
-2. **Tư duy Production-ready:** Thiết kế kiến trúc triển khai rolling update (cập nhật gối đầu) đảm bảo tính sẵn sàng cao, cấu hình tự động phục hồi khi lỗi, và thiết lập giới hạn tài nguyên (resource limits) cho container.
-3. **DevSecOps:** Tích hợp quy trình quét lỗ hổng bảo mật Trivy vào pipeline, chặn đứng rủi ro trước khi deploy. Áp dụng chuẩn bảo mật bằng non-root containers, Docker Secrets và network isolation.
-4. **Khả năng Debug thực chiến:** Khắc phục thành công sự cố tương thích phiên bản (ví dụ: cAdvisor và Docker Engine 29+) bằng tư duy phân tích nguyên nhân gốc rễ và xử lý bằng Shell Script. Các bài học được ghi chép cẩn thận trong [Sổ tay Troubleshooting](demo-troubleshooting-notes.md).
-5. **Tối ưu chi phí vận hành:** Pipeline Staging được thiết kế để hỗ trợ deploy chọn lọc (chỉ build service cần thiết) và có cơ chế dọn dẹp tài nguyên (cleanup) tự động giúp tiết kiệm chi phí cloud.
+DevOps work also requires diagnosing and resolving infrastructure issues. This project includes a real troubleshooting case related to cAdvisor and Docker Engine compatibility.
+
+**Issue:** Docker Swarm container metadata disappeared from Grafana dashboards.
+
+- **Root cause:** Docker Engine 29 changed the internal `layerdb` storage structure expected by cAdvisor. The Docker container handler could not initialize correctly, leaving only root cgroup metrics and removing the Swarm labels required by the dashboard queries.
+- **Resolution:** Instead of downgrading Docker, I investigated the issue and implemented a **Shell script combined with a Linux cron job**. The script creates dummy `mount-id` files every minute to restore the expected structure for cAdvisor, allowing it to collect container metrics and labels again.
+
+Detailed analysis is available in [demo-troubleshooting-notes.md](demo-troubleshooting-notes.md).
+
+---
+
+## 🏆 What This Project Demonstrates
+
+1. **Jenkins Pipeline Experience:** Building Jenkins Pipeline-as-Code with Groovy, parameterized builds using Active Choices Plugin, and automated webhook-based production deployments.
+2. **Production-ready Deployment Thinking:** Designing rolling updates, automatic rollback behavior, service health checks, and resource limits for containers.
+3. **DevSecOps Practices:** Integrating Trivy vulnerability scanning into the pipeline, using non-root containers, Docker Secrets, and network isolation.
+4. **Practical Debugging Ability:** Diagnosing compatibility issues such as cAdvisor with Docker Engine 29+ and implementing a working fix with shell scripting and cron.
+5. **Cloud Cost Awareness:** Designing the staging pipeline with selective deployment and cleanup options to reduce unnecessary cloud resource usage.
